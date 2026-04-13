@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 
 import torch
 
-DEFAULT_REPO_ROOT = '/mnt/petrelfs/zhuyangkun/workspace/lerobot_lab'
-DEFAULT_MODEL_DIR = (
-    '/mnt/phwfile/efm_t/zhuyangkun_tmp_need_del/vllm_a1/'
-    '2026_02_13_10_22_12-qwena1-a2d_real_A2D_Put_the_pen_from_the_table_into_the_pen_holder-delta-scratch-060000/'
-    'pretrained_model'
-)
-DEFAULT_DATASET_DIR = '/mnt/phwfile/efm_t/zhuyangkun_tmp_need_del/vllm_a1/pick_marker_pen_inference_rollouts_v30'
+DEFAULT_REPO_ROOT = os.getenv('QWENA1_REPO_ROOT', '/home/zhuyangkun/vllm-omni-internvla-a1')
+DEFAULT_MODEL_DIR = os.getenv('QWENA1_MODEL_DIR', '/home/zhuyangkun/data/vllm_a1/new_data/InternVLA-A1-3B-ft-pen')
+DEFAULT_DATASET_DIR = os.getenv('QWENA1_DATASET_DIR', '/home/zhuyangkun/data/vllm_a1/new_data/Genie1-Place_Markpen')
 
 
 def tensor_dtype(name: str) -> torch.dtype:
