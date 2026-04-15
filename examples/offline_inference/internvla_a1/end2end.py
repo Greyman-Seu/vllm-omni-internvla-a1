@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import statistics
+import time
 from pathlib import Path
 
 import torch
@@ -51,6 +53,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strict-load", action="store_true")
     parser.add_argument("--output-dir", default="outputs/internvla_a1/vllm_infer")
     parser.add_argument("--skip-plots", action="store_true")
+    parser.add_argument("--benchmark-forward", action="store_true")
+    parser.add_argument("--warmup-iters", type=int, default=3)
+    parser.add_argument("--benchmark-iters", type=int, default=10)
     return parser.parse_args()
 
 
@@ -157,6 +162,94 @@ def run_pipeline_forward(
     return output.output
 
 
+def _synchronize(device: str) -> None:
+    if device.startswith("cuda") and torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
+def _latency_summary(values_ms: list[float]) -> dict[str, float]:
+    sorted_values = sorted(values_ms)
+    p50_index = min(len(sorted_values) - 1, round(0.50 * (len(sorted_values) - 1)))
+    p90_index = min(len(sorted_values) - 1, round(0.90 * (len(sorted_values) - 1)))
+    return {
+        "mean_ms": float(statistics.mean(sorted_values)),
+        "stdev_ms": float(statistics.pstdev(sorted_values)) if len(sorted_values) > 1 else 0.0,
+        "min_ms": float(sorted_values[0]),
+        "max_ms": float(sorted_values[-1]),
+        "p50_ms": float(sorted_values[p50_index]),
+        "p90_ms": float(sorted_values[p90_index]),
+    }
+
+
+def benchmark_forward(
+    pipeline,
+    dataset: A2DOpenLoopDataset,
+    config: InternVLAA1Config,
+    args: argparse.Namespace,
+    index: int,
+    output_dir: Path,
+) -> dict[str, object]:
+    sample = dataset.get_sample(index)
+    batch_inputs, _ = collate_open_loop_samples([sample], device=args.device, dtype=tensor_dtype(args.dtype))
+    noise = make_shared_noise(
+        args.seed,
+        index,
+        (
+            batch_inputs[OBS_STATE].shape[0],
+            config.chunk_size,
+            config.max_action_dim,
+        ),
+        args.device,
+    )
+
+    _synchronize(args.device)
+    cold_start_begin = time.perf_counter()
+    pred = run_pipeline_forward(pipeline, batch_inputs, noise)
+    _synchronize(args.device)
+    cold_start_ms = (time.perf_counter() - cold_start_begin) * 1000.0
+
+    warmup_ms: list[float] = []
+    for _ in range(args.warmup_iters):
+        _synchronize(args.device)
+        begin = time.perf_counter()
+        _ = run_pipeline_forward(pipeline, batch_inputs, noise)
+        _synchronize(args.device)
+        warmup_ms.append((time.perf_counter() - begin) * 1000.0)
+
+    benchmark_ms: list[float] = []
+    for _ in range(args.benchmark_iters):
+        _synchronize(args.device)
+        begin = time.perf_counter()
+        _ = run_pipeline_forward(pipeline, batch_inputs, noise)
+        _synchronize(args.device)
+        benchmark_ms.append((time.perf_counter() - begin) * 1000.0)
+
+    pred = pred[:, :, : dataset.physical_action_dim].to(torch.float32).cpu()
+    summary = {
+        "mode": "forward_latency",
+        "model_dir": str(Path(args.model_dir).resolve()),
+        "dataset_dir": str(Path(args.dataset_dir).resolve()),
+        "sample_index": index,
+        "episode_index": sample.episode_index,
+        "task": sample.task,
+        "device": args.device,
+        "dtype": args.dtype,
+        "attn_implementation": args.attn_implementation,
+        "enable_regional_compile": args.enable_regional_compile,
+        "warmup_iters": args.warmup_iters,
+        "benchmark_iters": args.benchmark_iters,
+        "output_shape": list(pred.shape),
+        "cold_start_ms": cold_start_ms,
+        "warmup_summary": _latency_summary(warmup_ms) if warmup_ms else {},
+        "benchmark_summary": _latency_summary(benchmark_ms) if benchmark_ms else {},
+        "benchmark_samples_ms": benchmark_ms,
+    }
+    with open(output_dir / "forward_latency.json", "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return summary
+
+
 def main() -> None:
     args = parse_args()
     args.model_dir = _required_path_arg("INTERNVLA_A1_MODEL_DIR", args.model_dir)
@@ -169,6 +262,16 @@ def main() -> None:
 
     eval_summaries: dict[str, object] = {}
     pipeline = initialize_model(od_config)
+    if args.benchmark_forward:
+        benchmark_forward(
+            pipeline=pipeline,
+            dataset=dataset,
+            config=config,
+            args=args,
+            index=indices[0],
+            output_dir=output_dir,
+        )
+        return
     results = run_one_path(
         pipeline=pipeline,
         dataset=dataset,
