@@ -44,7 +44,6 @@ class InternVLAA1Pipeline(nn.Module, DiffusionPipelineProfilerMixin):
 
     def __init__(self, *, od_config: OmniDiffusionConfig, prefix: str = ""):
         super().__init__()
-        del prefix
         self.od_config = od_config
         self.model_dir = od_config.model
         self.config = self._build_config(od_config)

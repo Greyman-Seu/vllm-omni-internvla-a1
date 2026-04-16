@@ -11,10 +11,11 @@ import torch._dynamo as dynamo
 import torch.nn.functional as F
 from einops import rearrange
 from huggingface_hub import snapshot_download
-from safetensors.torch import load_model as load_model_as_safetensor
+from safetensors import safe_open
 from torch import Tensor, nn
 from transformers import Qwen3VLProcessor
 from transformers.models.auto import CONFIG_MAPPING
+from vllm.model_executor.models.utils import AutoWeightsLoader
 
 from .config import (
     DEFAULT_COSMOS_DIR,
@@ -767,6 +768,8 @@ class InternVLAA1(nn.Module):
 
 
 class InternVLAA1Policy(nn.Module):
+    _AUTO_WEIGHTS_IGNORE_PREFIXES = ["model.cosmos."]
+
     def __init__(
         self,
         config: InternVLAA1Config,
@@ -795,12 +798,30 @@ class InternVLAA1Policy(nn.Module):
         if config is None:
             config = InternVLAA1Config.from_pretrained(checkpoint_dir)
         instance = cls(config, processor_model_name=processor_model_name)
-        load_model_as_safetensor(
+        checkpoint_path = checkpoint_dir / "model.safetensors"
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"InternVLAA1 checkpoint not found: {checkpoint_path}")
+
+        loader = AutoWeightsLoader(
             instance,
-            str(checkpoint_dir / "model.safetensors"),
-            strict=strict,
-            device=config.device,
+            ignore_unexpected_prefixes=cls._AUTO_WEIGHTS_IGNORE_PREFIXES,
         )
+        with safe_open(str(checkpoint_path), framework="pt", device=str(config.device)) as f:
+            file_keys = list(f.keys())
+            loaded = loader.load_weights((name, f.get_tensor(name)) for name in file_keys)
+
+        if strict:
+            expected = {
+                name
+                for name, _ in instance.state_dict().items()
+                if not any(name.startswith(prefix) for prefix in cls._AUTO_WEIGHTS_IGNORE_PREFIXES)
+            }
+            missing = sorted(expected - loaded)
+            if missing:
+                preview = ", ".join(missing[:10])
+                suffix = " ..." if len(missing) > 10 else ""
+                raise RuntimeError(f"Missing weights after AutoWeightsLoader load: {preview}{suffix}")
+
         instance.eval()
         return instance
 
