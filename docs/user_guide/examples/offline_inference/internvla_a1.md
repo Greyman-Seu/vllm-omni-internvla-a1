@@ -174,7 +174,7 @@ pip install matplotlib
 - `collect_results.sh`: helper to gather result summaries and performance logs into one directory
 - `internvla_a1_common.py`: dataset, evaluation, and plotting helpers
 
-## Example materials
+## Embedded source listings
 
 ??? abstract "collect_results.sh"
     ``````sh

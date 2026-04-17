@@ -25,7 +25,7 @@ from .config import (
     OBS_TASK,
     InternVLAA1Config,
 )
-from .model_internvla_a1 import InternVLAA1Policy
+from .model_internvla_a1 import InternVLAA1Policy, resolve_cosmos_checkpoint_paths
 
 logger = init_logger(__name__)
 
@@ -45,6 +45,7 @@ class InternVLAA1Pipeline(nn.Module, DiffusionPipelineProfilerMixin):
     def __init__(self, *, od_config: OmniDiffusionConfig, prefix: str = ""):
         super().__init__()
         self.od_config = od_config
+        self.prefix = prefix
         self.model_dir = od_config.model
         self.config = self._build_config(od_config)
         custom_args = od_config.custom_pipeline_args or {}
@@ -158,6 +159,7 @@ class InternVLAA1Pipeline(nn.Module, DiffusionPipelineProfilerMixin):
                 logger.warning("InternVLAA1Pipeline regional compile failed for %s: %s", path, exc)
 
     def _initialize_policy(self) -> InternVLAA1Policy:
+        resolve_cosmos_checkpoint_paths()
         if self.has_real_checkpoint():
             logger.info("Loading InternVLA-A1 weights from %s", self.model_dir)
             policy = InternVLAA1Policy.from_pretrained(

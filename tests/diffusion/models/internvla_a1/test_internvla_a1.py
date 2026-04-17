@@ -7,9 +7,15 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from transformers.models.auto import CONFIG_MAPPING
 
 import vllm_omni.diffusion.models.internvla_a1.pipeline_internvla_a1 as internvla_pipeline_module
+from vllm_omni.diffusion.models.internvla_a1.adapter_qwen3_vl import (
+    Qwen3VLTextDecoderLayer,
+    Qwen3VLTextRMSNorm,
+)
 from vllm_omni.diffusion.models.internvla_a1.config import (
+    DEFAULT_COSMOS_REPO,
     OBS_IMAGES,
     OBS_STATE,
     OBS_TASK,
@@ -26,6 +32,7 @@ from vllm_omni.diffusion.models.internvla_a1.model_internvla_a1 import (
     make_att_2d_masks,
     pad_vector,
     resize_with_pad,
+    resolve_cosmos_checkpoint_paths,
 )
 from vllm_omni.diffusion.models.internvla_a1.pipeline_internvla_a1 import (
     InternVLAA1Pipeline,
@@ -205,6 +212,44 @@ class TestInternVLAA1Helpers:
         with pytest.raises(ValueError, match="Unknown variant"):
             get_qwen_config("internvl_unknown")
 
+    def test_resolve_cosmos_checkpoint_paths_returns_existing_local_files(self, monkeypatch, tmp_path):
+        encoder = tmp_path / "encoder.jit"
+        decoder = tmp_path / "decoder.jit"
+        encoder.write_bytes(b"encoder")
+        decoder.write_bytes(b"decoder")
+        monkeypatch.setattr(
+            "vllm_omni.diffusion.models.internvla_a1.model_internvla_a1.DEFAULT_COSMOS_DIR",
+            tmp_path,
+        )
+
+        resolved_encoder, resolved_decoder = resolve_cosmos_checkpoint_paths()
+
+        assert resolved_encoder == encoder
+        assert resolved_decoder == decoder
+
+    def test_resolve_cosmos_checkpoint_paths_raises_clear_error_when_missing(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "vllm_omni.diffusion.models.internvla_a1.model_internvla_a1.DEFAULT_COSMOS_DIR",
+            tmp_path,
+        )
+
+        with pytest.raises(FileNotFoundError, match="INTERNVLA_A1_COSMOS_DIR"):
+            resolve_cosmos_checkpoint_paths()
+
+        with pytest.raises(FileNotFoundError, match=DEFAULT_COSMOS_REPO):
+            resolve_cosmos_checkpoint_paths()
+
+
+class TestInternVLAA1AdapterOverrides:
+    def test_text_decoder_layer_uses_local_rmsnorm_overrides(self):
+        config = CONFIG_MAPPING["qwen3_vl_text"]()
+        layer = Qwen3VLTextDecoderLayer(config, layer_idx=0)
+
+        assert isinstance(layer.self_attn.q_norm, Qwen3VLTextRMSNorm)
+        assert isinstance(layer.self_attn.k_norm, Qwen3VLTextRMSNorm)
+        assert isinstance(layer.input_layernorm, Qwen3VLTextRMSNorm)
+        assert isinstance(layer.post_attention_layernorm, Qwen3VLTextRMSNorm)
+
 
 class TestInternVLAA1ModelHelpers:
     def test_prepare_attention_masks_4d_uses_float32_bias_for_eager(self):
@@ -338,6 +383,22 @@ class TestInternVLAA1PolicyHelpers:
 
 
 class TestInternVLAA1PipelineHelpers:
+    def test_pipeline_init_preserves_prefix(self, monkeypatch):
+        monkeypatch.setattr(InternVLAA1Pipeline, "_build_config", lambda self, od_config: SimpleNamespace())
+        monkeypatch.setattr(InternVLAA1Pipeline, "setup_diffusion_pipeline_profiler", lambda self, **kwargs: None)
+        monkeypatch.setattr(InternVLAA1Pipeline, "_initialize_policy", lambda self: SimpleNamespace())
+        monkeypatch.setattr(InternVLAA1Pipeline, "_setup_policy_profiler_targets", lambda self: None)
+        monkeypatch.setattr(InternVLAA1Pipeline, "_warmup", lambda self: None)
+        od_config = SimpleNamespace(
+            model="/tmp/internvla-a1",
+            custom_pipeline_args={},
+            enable_diffusion_pipeline_profiler=False,
+        )
+
+        pipeline = InternVLAA1Pipeline(od_config=od_config, prefix="internvla_a1")
+
+        assert pipeline.prefix == "internvla_a1"
+
     def test_post_process_func_is_identity(self):
         post_process = get_internvla_a1_post_process_func(SimpleNamespace())
         value = torch.tensor([1.0, 2.0])

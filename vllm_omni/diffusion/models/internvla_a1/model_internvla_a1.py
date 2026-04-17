@@ -10,13 +10,18 @@ import torch
 import torch._dynamo as dynamo
 import torch.nn.functional as F
 from einops import rearrange
-from huggingface_hub import snapshot_download
 from safetensors import safe_open
 from torch import Tensor, nn
 from transformers import Qwen3VLProcessor
 from transformers.models.auto import CONFIG_MAPPING
 from vllm.model_executor.models.utils import AutoWeightsLoader
 
+from .adapter_qwen3_vl import (
+    Qwen3VLForConditionalGeneration,
+    Qwen3VLTextModel,
+    apply_rotary_pos_emb,
+    eager_attention_forward,
+)
 from .config import (
     DEFAULT_COSMOS_DIR,
     DEFAULT_COSMOS_REPO,
@@ -29,12 +34,6 @@ from .config import (
     InternVLAA1Config,
 )
 from .model_cosmos import ImageTokenizer
-from .modeling_qwen3_vl import (
-    Qwen3VLForConditionalGeneration,
-    Qwen3VLTextModel,
-    apply_rotary_pos_emb,
-    eager_attention_forward,
-)
 
 
 def get_safe_dtype(target_dtype: torch.dtype, device_type: str) -> torch.dtype:
@@ -263,6 +262,26 @@ def get_qwen_config(variant: str) -> QwenConfig:
     raise ValueError(f"Unknown variant: {variant}")
 
 
+def resolve_cosmos_checkpoint_paths(
+    *,
+    encoder_path: str | Path | None = None,
+    decoder_path: str | Path | None = None,
+) -> tuple[Path, Path]:
+    checkpoint_enc = Path(encoder_path).expanduser() if encoder_path is not None else DEFAULT_COSMOS_DIR / "encoder.jit"
+    checkpoint_dec = Path(decoder_path).expanduser() if decoder_path is not None else DEFAULT_COSMOS_DIR / "decoder.jit"
+
+    missing = [str(path) for path in (checkpoint_enc, checkpoint_dec) if not path.exists()]
+    if missing:
+        missing_display = ", ".join(missing)
+        raise FileNotFoundError(
+            "InternVLA-A1 requires local Cosmos tokenizer JIT checkpoints. "
+            f"Missing: {missing_display}. "
+            f"Download {DEFAULT_COSMOS_REPO} and set INTERNVLA_A1_COSMOS_DIR to that directory."
+        )
+
+    return checkpoint_enc, checkpoint_dec
+
+
 class Qwen3VLWithExpertModel(nn.Module):
     def __init__(
         self,
@@ -327,11 +346,15 @@ class Qwen3VLWithExpertModel(nn.Module):
         if precision == "bfloat16":
             self.to(dtype=torch.bfloat16)
         elif precision == "float32":
+            # The fp32 path keeps the whole module in full precision, so no
+            # selective post-conversion fixups are required.
             self.to(dtype=torch.float32)
             return
         else:
             raise ValueError(f"Unsupported precision: {precision}")
 
+        # Match the original runtime numerics by keeping normalization layers
+        # in fp32 even when the rest of the module runs in bf16.
         keep_fp32 = ["input_layernorm", "post_attention_layernorm", "model.norm"]
         for name, param in self.named_parameters():
             if any(key in name for key in keep_fp32):
@@ -392,7 +415,13 @@ class Qwen3VLWithExpertModel(nn.Module):
 
 
 class InternVLAA1(nn.Module):
-    def __init__(self, config: InternVLAA1Config) -> None:
+    def __init__(
+        self,
+        config: InternVLAA1Config,
+        *,
+        cosmos_encoder_path: str | Path | None = None,
+        cosmos_decoder_path: str | Path | None = None,
+    ) -> None:
         super().__init__()
         self.config = config
 
@@ -400,11 +429,13 @@ class InternVLAA1(nn.Module):
         action_expert_config = get_qwen_config(config.action_expert_variant)
         self.qwen3_vl_with_expert = Qwen3VLWithExpertModel(vlm_config, action_expert_config, precision=config.dtype)
 
-        if not (DEFAULT_COSMOS_DIR / "encoder.jit").exists():
-            snapshot_download(repo_id=DEFAULT_COSMOS_REPO, local_dir=str(DEFAULT_COSMOS_DIR))
+        cosmos_encoder_path, cosmos_decoder_path = resolve_cosmos_checkpoint_paths(
+            encoder_path=cosmos_encoder_path,
+            decoder_path=cosmos_decoder_path,
+        )
         self.cosmos = ImageTokenizer(
-            checkpoint_enc=str(DEFAULT_COSMOS_DIR / "encoder.jit"),
-            checkpoint_dec=str(DEFAULT_COSMOS_DIR / "decoder.jit"),
+            checkpoint_enc=str(cosmos_encoder_path),
+            checkpoint_dec=str(cosmos_decoder_path),
             device=config.device,
         )
 
@@ -506,7 +537,6 @@ class InternVLAA1(nn.Module):
         features = self.cosmos_in_proj(features)
         features = self.downsample_conv(features)
         features = rearrange(features, "(b n t) c h w -> b n t c h w", b=batch_size, n=n_view, t=timesteps)
-        self.cosmos_feat_shape = features.shape
 
         _, _, _, _, height, width = features.shape
         embs = rearrange(features, "b n t c h w -> b (n t h w) c")
@@ -782,7 +812,12 @@ class InternVLAA1Policy(nn.Module):
             processor_model_name=processor_model_name,
             max_length=config.tokenizer_max_length,
         )
-        self.model = InternVLAA1(config)
+        cosmos_encoder_path, cosmos_decoder_path = resolve_cosmos_checkpoint_paths()
+        self.model = InternVLAA1(
+            config,
+            cosmos_encoder_path=cosmos_encoder_path,
+            cosmos_decoder_path=cosmos_decoder_path,
+        )
         self.model.to(config.device)
 
     @classmethod

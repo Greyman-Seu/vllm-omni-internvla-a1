@@ -5,11 +5,19 @@ import argparse
 import json
 import os
 import statistics
+import sys
 import time
 from pathlib import Path
 
 import torch
-from internvla_a1_common import (
+
+_WORKSPACE_ROOT = Path(__file__).resolve().parent
+_REPO_ROOT = _WORKSPACE_ROOT.parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    # Keep the shared helper import clean by doing script-only path bootstrap here.
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from internvla_a1_common import (  # noqa: E402
     A2DOpenLoopDataset,
     collate_open_loop_samples,
     make_shared_noise,
@@ -19,15 +27,15 @@ from internvla_a1_common import (
     tensor_sha256,
 )
 
-from vllm_omni.diffusion.data import OmniDiffusionConfig
-from vllm_omni.diffusion.models.internvla_a1 import (
+from vllm_omni.diffusion.data import OmniDiffusionConfig  # noqa: E402
+from vllm_omni.diffusion.models.internvla_a1 import (  # noqa: E402
     InternVLAA1Config,
     InternVLAA1TrainMetadata,
 )
-from vllm_omni.diffusion.models.internvla_a1.config import OBS_STATE
-from vllm_omni.diffusion.registry import initialize_model
-from vllm_omni.diffusion.request import OmniDiffusionRequest
-from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+from vllm_omni.diffusion.models.internvla_a1.config import OBS_STATE  # noqa: E402
+from vllm_omni.diffusion.registry import initialize_model  # noqa: E402
+from vllm_omni.diffusion.request import OmniDiffusionRequest  # noqa: E402
+from vllm_omni.inputs.data import OmniDiffusionSamplingParams  # noqa: E402
 
 
 def _required_path_arg(env_name: str, cli_value: str | None) -> str:

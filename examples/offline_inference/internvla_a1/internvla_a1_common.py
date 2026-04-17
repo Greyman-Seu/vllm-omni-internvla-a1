@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,11 +13,6 @@ import pyarrow.parquet as pq
 import torch
 import torch.nn.functional as F
 import torchvision
-
-_WORKSPACE_ROOT = Path(__file__).resolve().parent
-_REPO_ROOT = _WORKSPACE_ROOT.parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
 
 from vllm_omni.diffusion.models.internvla_a1.config import (  # noqa: E402
     OBS_IMAGES,
