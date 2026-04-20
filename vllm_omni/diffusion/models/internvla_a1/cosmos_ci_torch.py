@@ -366,7 +366,7 @@ class ContinuousImageTokenizer(nn.Module):
         self.post_quant_conv = nn.Conv2d(latent_channels, z_channels, 1)
         self.distribution = IdentityDistribution()
 
-    def encoder_jit(self) -> nn.Sequential:
+    def encoder_module(self) -> nn.Sequential:
         return nn.Sequential(
             OrderedDict(
                 [
@@ -377,7 +377,7 @@ class ContinuousImageTokenizer(nn.Module):
             )
         )
 
-    def decoder_jit(self) -> nn.Sequential:
+    def decoder_module(self) -> nn.Sequential:
         return nn.Sequential(
             OrderedDict(
                 [

@@ -9,7 +9,7 @@ RESULT_ROOT="${INTERNVLA_A1_RESULT_DIR:-$REPO_ROOT/outputs/internvla_a1/collecte
 : "${INTERNVLA_A1_MODEL_DIR:?Please export INTERNVLA_A1_MODEL_DIR=/path/to/InternVLA-A1-3B-ft-pen}"
 : "${INTERNVLA_A1_DATASET_DIR:?Please export INTERNVLA_A1_DATASET_DIR=/path/to/Genie1-Place_Markpen}"
 : "${INTERNVLA_A1_PROCESSOR_DIR:?Please export INTERNVLA_A1_PROCESSOR_DIR=/path/to/Qwen3-VL-2B-Instruct}"
-: "${INTERNVLA_A1_COSMOS_DIR:?Please export INTERNVLA_A1_COSMOS_DIR=/path/to/Cosmos-Tokenizer-CI8x8}"
+: "${INTERNVLA_A1_COSMOS_DIR:?Please export INTERNVLA_A1_COSMOS_DIR=/path/to/Cosmos-Tokenizer-CI8x8-SafeTensor}"
 
 EVAL_OUTPUT_DIR="$RESULT_ROOT/eval_outputs"
 GPU_MONITOR_INTERVAL="${GPU_MONITOR_INTERVAL:-1}"

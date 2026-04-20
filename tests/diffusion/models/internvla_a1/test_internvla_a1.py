@@ -309,8 +309,8 @@ class TestInternVLAA1CosmosHelpers:
     def test_build_cosmos_ci_torch_model_exposes_encoder_and_decoder(self):
         model = build_cosmos_ci_torch_model(spatial_compression=8)
 
-        encoder = model.encoder_jit()
-        decoder = model.decoder_jit()
+        encoder = model.encoder_module()
+        decoder = model.decoder_module()
 
         assert isinstance(encoder, torch.nn.Sequential)
         assert isinstance(decoder, torch.nn.Sequential)
@@ -343,8 +343,8 @@ class TestInternVLAA1CosmosHelpers:
         assert isinstance(tokenizer._dec_model, torch.nn.Module)
 
     def test_load_cosmos_component_rejects_non_safetensors(self, tmp_path):
-        checkpoint = tmp_path / "Cosmos-Tokenizer-CI8x8-encoder.jit"
-        checkpoint.write_bytes(b"jit")
+        checkpoint = tmp_path / "Cosmos-Tokenizer-CI8x8-encoder.ckpt"
+        checkpoint.write_bytes(b"ckpt")
 
         with pytest.raises(ValueError, match="expects `.safetensors`"):
             load_cosmos_component(

@@ -37,9 +37,9 @@ def _load_native_cosmos_component(
         spatial_compression=infer_cosmos_ci_spatial_compression(checkpoint_filepath)
     )
     if component == "encoder":
-        model = full_model.encoder_jit()
+        model = full_model.encoder_module()
     elif component == "decoder":
-        model = full_model.decoder_jit()
+        model = full_model.decoder_module()
     else:
         raise ValueError(f"Unsupported Cosmos component: {component}")
 
