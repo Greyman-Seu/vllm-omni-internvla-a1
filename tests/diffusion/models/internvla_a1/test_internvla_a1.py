@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from safetensors.torch import save_file
 from transformers.models.auto import CONFIG_MAPPING
 
 import vllm_omni.diffusion.models.internvla_a1.pipeline_internvla_a1 as internvla_pipeline_module
@@ -22,6 +23,13 @@ from vllm_omni.diffusion.models.internvla_a1.config import (
     OPENPI_ATTENTION_MASK_VALUE,
     InternVLAA1Config,
     InternVLAA1TrainMetadata,
+)
+from vllm_omni.diffusion.models.internvla_a1.cosmos_ci_torch import build_cosmos_ci_torch_model
+from vllm_omni.diffusion.models.internvla_a1.model_cosmos import (
+    ImageTokenizer,
+    infer_cosmos_ci_spatial_compression,
+    is_safetensors_checkpoint,
+    load_cosmos_component,
 )
 from vllm_omni.diffusion.models.internvla_a1.model_internvla_a1 import (
     InternVLAA1,
@@ -213,8 +221,8 @@ class TestInternVLAA1Helpers:
             get_qwen_config("internvl_unknown")
 
     def test_resolve_cosmos_checkpoint_paths_returns_existing_local_files(self, monkeypatch, tmp_path):
-        encoder = tmp_path / "encoder.jit"
-        decoder = tmp_path / "decoder.jit"
+        encoder = tmp_path / "encoder.safetensors"
+        decoder = tmp_path / "decoder.safetensors"
         encoder.write_bytes(b"encoder")
         decoder.write_bytes(b"decoder")
         monkeypatch.setattr(
@@ -238,6 +246,112 @@ class TestInternVLAA1Helpers:
 
         with pytest.raises(FileNotFoundError, match=DEFAULT_COSMOS_REPO):
             resolve_cosmos_checkpoint_paths()
+
+    def test_resolve_cosmos_checkpoint_paths_honors_explicit_env_overrides(self, monkeypatch, tmp_path):
+        encoder = tmp_path / "encoder.safetensors"
+        decoder = tmp_path / "decoder.safetensors"
+        encoder.write_bytes(b"encoder")
+        decoder.write_bytes(b"decoder")
+        monkeypatch.setenv("INTERNVLA_A1_COSMOS_ENCODER_PATH", str(encoder))
+        monkeypatch.setenv("INTERNVLA_A1_COSMOS_DECODER_PATH", str(decoder))
+        monkeypatch.setattr(
+            "vllm_omni.diffusion.models.internvla_a1.model_internvla_a1.DEFAULT_COSMOS_DIR",
+            tmp_path / "missing",
+        )
+
+        resolved_encoder, resolved_decoder = resolve_cosmos_checkpoint_paths()
+
+        assert resolved_encoder == encoder
+        assert resolved_decoder == decoder
+
+    def test_resolve_cosmos_checkpoint_paths_uses_safetensors_defaults(self, monkeypatch, tmp_path):
+        encoder = tmp_path / "encoder.safetensors"
+        decoder = tmp_path / "decoder.safetensors"
+        encoder.write_bytes(b"encoder")
+        decoder.write_bytes(b"decoder")
+        monkeypatch.setattr(
+            "vllm_omni.diffusion.models.internvla_a1.model_internvla_a1.DEFAULT_COSMOS_DIR",
+            tmp_path,
+        )
+
+        resolved_encoder, resolved_decoder = resolve_cosmos_checkpoint_paths()
+
+        assert resolved_encoder == encoder
+        assert resolved_decoder == decoder
+
+
+class TestInternVLAA1CosmosHelpers:
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            ("encoder.safetensors", True),
+            ("decoder.safetensors", True),
+            ("encoder.pt", False),
+        ],
+    )
+    def test_is_safetensors_checkpoint(self, path, expected):
+        assert is_safetensors_checkpoint(path) is expected
+
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            ("Cosmos-Tokenizer-CI8x8/encoder.safetensors", 8),
+            ("Cosmos-0.1-Tokenizer-CI16x16/decoder.safetensors", 16),
+        ],
+    )
+    def test_infer_cosmos_ci_spatial_compression(self, path, expected):
+        assert infer_cosmos_ci_spatial_compression(path) == expected
+
+    def test_infer_cosmos_ci_spatial_compression_rejects_unknown_path(self):
+        with pytest.raises(ValueError, match="Unable to infer"):
+            infer_cosmos_ci_spatial_compression("cosmos_encoder.pt")
+
+    def test_build_cosmos_ci_torch_model_exposes_encoder_and_decoder(self):
+        model = build_cosmos_ci_torch_model(spatial_compression=8)
+
+        encoder = model.encoder_jit()
+        decoder = model.decoder_jit()
+
+        assert isinstance(encoder, torch.nn.Sequential)
+        assert isinstance(decoder, torch.nn.Sequential)
+
+    def test_load_cosmos_component_supports_safetensors_torch_backend(self, tmp_path):
+        checkpoint = tmp_path / "Cosmos-Tokenizer-CI8x8-encoder.safetensors"
+        save_file({"dummy": torch.zeros(1)}, checkpoint)
+
+        model = load_cosmos_component(
+            checkpoint,
+            component="encoder",
+            device="cpu",
+        )
+
+        assert isinstance(model, torch.nn.Module)
+
+    def test_image_tokenizer_torch_backend_accepts_safetensors_paths(self, tmp_path):
+        encoder = tmp_path / "Cosmos-Tokenizer-CI8x8-encoder.safetensors"
+        decoder = tmp_path / "Cosmos-Tokenizer-CI8x8-decoder.safetensors"
+        save_file({"dummy": torch.zeros(1)}, encoder)
+        save_file({"dummy": torch.zeros(1)}, decoder)
+
+        tokenizer = ImageTokenizer(
+            str(encoder),
+            str(decoder),
+            device="cpu",
+        )
+
+        assert isinstance(tokenizer._enc_model, torch.nn.Module)
+        assert isinstance(tokenizer._dec_model, torch.nn.Module)
+
+    def test_load_cosmos_component_rejects_non_safetensors(self, tmp_path):
+        checkpoint = tmp_path / "Cosmos-Tokenizer-CI8x8-encoder.jit"
+        checkpoint.write_bytes(b"jit")
+
+        with pytest.raises(ValueError, match="expects `.safetensors`"):
+            load_cosmos_component(
+                checkpoint,
+                component="encoder",
+                device="cpu",
+            )
 
 
 class TestInternVLAA1AdapterOverrides:

@@ -267,16 +267,30 @@ def resolve_cosmos_checkpoint_paths(
     encoder_path: str | Path | None = None,
     decoder_path: str | Path | None = None,
 ) -> tuple[Path, Path]:
-    checkpoint_enc = Path(encoder_path).expanduser() if encoder_path is not None else DEFAULT_COSMOS_DIR / "encoder.jit"
-    checkpoint_dec = Path(decoder_path).expanduser() if decoder_path is not None else DEFAULT_COSMOS_DIR / "decoder.jit"
+    encoder_override = encoder_path or os.getenv("INTERNVLA_A1_COSMOS_ENCODER_PATH")
+    decoder_override = decoder_path or os.getenv("INTERNVLA_A1_COSMOS_DECODER_PATH")
+    default_encoder_name = "encoder.safetensors"
+    default_decoder_name = "decoder.safetensors"
+    checkpoint_enc = (
+        Path(encoder_override).expanduser()
+        if encoder_override is not None
+        else DEFAULT_COSMOS_DIR / default_encoder_name
+    )
+    checkpoint_dec = (
+        Path(decoder_override).expanduser()
+        if decoder_override is not None
+        else DEFAULT_COSMOS_DIR / default_decoder_name
+    )
 
     missing = [str(path) for path in (checkpoint_enc, checkpoint_dec) if not path.exists()]
     if missing:
         missing_display = ", ".join(missing)
         raise FileNotFoundError(
-            "InternVLA-A1 requires local Cosmos tokenizer JIT checkpoints. "
+            "InternVLA-A1 requires local Cosmos tokenizer checkpoints. "
             f"Missing: {missing_display}. "
-            f"Download {DEFAULT_COSMOS_REPO} and set INTERNVLA_A1_COSMOS_DIR to that directory."
+            f"Download {DEFAULT_COSMOS_REPO} and set INTERNVLA_A1_COSMOS_DIR to that directory, "
+            "or point INTERNVLA_A1_COSMOS_ENCODER_PATH / INTERNVLA_A1_COSMOS_DECODER_PATH "
+            "to explicit checkpoint files."
         )
 
     return checkpoint_enc, checkpoint_dec
