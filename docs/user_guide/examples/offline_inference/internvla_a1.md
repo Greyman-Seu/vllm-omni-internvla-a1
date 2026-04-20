@@ -16,6 +16,7 @@ export INTERNVLA_A1_MODEL_DIR=/path/to/InternVLA-A1-3B-ft-pen
 # hf download InternRobotics/InternData-A1 real_lerobotv30/genie1/Genie1-Place_Markpen.tar.gz --repo-type dataset --local-dir /path/to/Genie1-Place_Markpen
 export INTERNVLA_A1_DATASET_DIR=/path/to/Genie1-Place_Markpen
 export INTERNVLA_A1_PROCESSOR_DIR=/path/to/Qwen3-VL-2B-Instruct
+# hf tenstep/Cosmos-Tokenizer-CI8x8-SafeTensors
 export INTERNVLA_A1_COSMOS_DIR=/path/to/Cosmos-Tokenizer-CI8x8-SafeTensor
 ```
 
@@ -25,6 +26,8 @@ The shell entrypoint also accepts these variables as defaults, so you can keep t
 
 - `encoder.safetensors`
 - `decoder.safetensors`
+
+Reference Hugging Face repo: `tenstep/Cosmos-Tokenizer-CI8x8-SafeTensors`
 
 ## Run examples
 

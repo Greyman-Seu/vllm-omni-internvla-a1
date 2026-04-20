@@ -8,6 +8,7 @@ Quick start:
 export INTERNVLA_A1_MODEL_DIR=/path/to/InternVLA-A1-3B-ft-pen
 export INTERNVLA_A1_DATASET_DIR=/path/to/Genie1-Place_Markpen
 export INTERNVLA_A1_PROCESSOR_DIR=/path/to/Qwen3-VL-2B-Instruct
+# hf tenstep/Cosmos-Tokenizer-CI8x8-SafeTensors
 export INTERNVLA_A1_COSMOS_DIR=/path/to/Cosmos-Tokenizer-CI8x8-SafeTensor
 
 bash run.sh --num-samples 1 --num-episodes 0
@@ -19,6 +20,8 @@ Expected files under `INTERNVLA_A1_COSMOS_DIR`:
 
 - `encoder.safetensors`
 - `decoder.safetensors`
+
+Reference Hugging Face repo: `tenstep/Cosmos-Tokenizer-CI8x8-SafeTensors`
 
 Key entrypoints:
 
