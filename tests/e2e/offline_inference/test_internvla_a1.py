@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.utils import hardware_test
+from tests.helpers.mark import hardware_test
 
 os.environ["VLLM_TEST_CLEAN_GPU_MEMORY"] = "1"
 
@@ -32,7 +32,7 @@ def _required_env(name: str) -> str:
 @pytest.mark.core_model
 @pytest.mark.advanced_model
 @pytest.mark.diffusion
-@hardware_test(res={"cuda": "H100"}, num_cards={"cuda": 1})
+@hardware_test(res={"cuda": "H100", "rocm": "MI325"})
 def test_internvla_a1_offline_open_loop(run_level: str) -> None:
     if run_level != "advanced_model":
         pytest.skip("InternVLA-A1 offline evaluation requires real local checkpoints and dataset.")

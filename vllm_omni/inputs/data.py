@@ -16,7 +16,12 @@ except ImportError:
 
 
 import torch
-from vllm.inputs import EmbedsPrompt, TextPrompt, TokensInput, TokensPrompt
+
+try:
+    from vllm.inputs import EmbedsPrompt, TextPrompt, TokenInputs, TokensPrompt
+except ImportError:
+    from vllm.inputs import EmbedsPrompt, TextPrompt, TokensPrompt
+    from vllm.inputs import TokensInput as TokenInputs
 
 
 class OmniTextPrompt(TextPrompt):
@@ -59,7 +64,7 @@ class OmniTokensPrompt(TokensPrompt):
     additional_information: NotRequired[dict[str, Any]]
 
 
-class OmniTokenInputs(TokensInput):
+class OmniTokenInputs(TokenInputs):
     """Token inputs with optional embeddings and additional information.
 
     Extends TokensInput to support prompt embeddings and additional
